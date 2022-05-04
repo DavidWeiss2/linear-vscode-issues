@@ -1,15 +1,15 @@
 {
-  "name": "linear-open-issue",
-  "displayName": "Linear Open Issue",
-  "description": "Open the Linear issue that is currently being worked on based on the Git branch name.",
-  "publisher": "linear",
-  "author": "Linear Orbit, Inc",
+  "name": "linear-create-branch",
+  "displayName": "Linear Create Branch",
+  "description": "Create git branch from a linear issue that is currently being worked on based on the vieing user.",
+  "publisher": "gauravp123",
+  "author": "GP",
   "license": "MIT",
-  "version": "1.0.2",
+  "version": "1.0.6",
   "icon": "assets/128x128.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/linear/linear-vscode-open-issue"
+    "url": "https://github.com/gaurav-verkada/linear-vscode-open-issue"
   },
   "engines": {
     "vscode": "^1.65.0"
@@ -18,7 +18,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:linear-open-issue.openIssue"
+    "onCommand:linear-create-branch.createBranch"
   ],
   "capabilities": {
     "virtualWorkspaces": true,
@@ -30,16 +30,16 @@
   "contributes": {
     "commands": [
       {
-        "command": "linear-open-issue.openIssue",
-        "title": "Linear: Open issue"
+        "command": "linear-create-branch.createBranch",
+        "title": "Linear: Create branch"
       }
     ],
     "configuration": {
-      "title": "Open issue in Linear",
+      "title": "Create GIT branch from Linear issue",
       "properties": {
         "openInDesktopApp": {
           "type": "boolean",
-          "description": "Open Linear issue in the desktop app"
+          "description": "Creates a new GIT branch from selected Linear issue"
         }
       }
     }

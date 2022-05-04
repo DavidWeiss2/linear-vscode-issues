@@ -1,7 +1,7 @@
-import * as vscode from "vscode";
 import { LinearClient } from "@linear/sdk";
-import { GitExtension } from "./types.d/git";
-
+import * as cp from "child_process";
+import * as vscode from "vscode";
+import { window } from "vscode";
 /**
  * This extension registers the "Open in Linear command" upon activation.
  */
@@ -9,9 +9,29 @@ import { GitExtension } from "./types.d/git";
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
 const LINEAR_AUTHENTICATION_SCOPES = ["read"];
 
+const execShell = (cmd: string) =>
+  new Promise<string>((resolve, reject) => {
+    cp.exec(cmd, (err, out) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(out);
+    });
+  });
+async function getBranchInput(issueLabel: string) {
+  let branch = await window.showInputBox({
+    title: "enter branch name:",
+    value: `${issueLabel}-`,
+  });
+  branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
+  window.showInformationMessage(`creating branch: ${branch}`);
+  let wf = vscode.workspace.workspaceFolders[0].uri.path;
+  const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
+  window.showInformationMessage(`done!`);
+}
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
-    "linear-open-issue.openIssue",
+    "linear-create-branch.createBranch",
     async () => {
       const session = await vscode.authentication.getSession(
         LINEAR_AUTHENTICATION_PROVIDER_ID,
@@ -31,53 +51,70 @@ export function activate(context: vscode.ExtensionContext) {
       });
 
       // Use VS Code's built-in Git extension API to get the current branch name.
-      const gitExtension =
-        vscode.extensions.getExtension<GitExtension>("vscode.git")?.exports;
-      const git = gitExtension?.getAPI(1);
-      const branchName = git?.repositories[0]?.state.HEAD?.name;
 
       try {
         const request: {
-          issueVcsBranchSearch: {
-            identifier: string;
-            team: {
-              organization: {
-                urlKey: string;
-              };
-            };
+          viewer: {
+            id: string;
+            name: string;
+            email: string;
           } | null;
-        } | null = await linearClient.client.request(`query {
-            issueVcsBranchSearch(branchName: "${branchName}") {
-              identifier
-              team {
-                organization {
-                  urlKey
+        } | null = await linearClient.client.request(`query Me {
+          viewer {
+            id
+            name
+            email
+          }
+        }`);
+        const userId = request?.viewer?.id;
+        if (userId) {
+          const request2: {
+            user: {
+              assignedIssues: {
+                nodes: {
+                  identifier: string;
+                  title: string;
+                  cycle: {
+                    number: number;
+                  };
+                }[];
+              };
+              id: string;
+              name: string;
+            } | null;
+          } | null = await linearClient.client.request(`query {
+          user(id: "${userId}") {
+            id
+            name
+            assignedIssues {
+              nodes {
+                title
+                identifier
+                cycle {
+                  number
                 }
               }
             }
-          }`);
+          }
+        }`);
 
-        if (request?.issueVcsBranchSearch?.identifier) {
-          // Preference to open the issue in the desktop app or in the browser.
-          const urlPrefix = vscode.workspace
-            .getConfiguration()
-            .get<boolean>("openInDesktopApp")
-            ? "linear://"
-            : "https://linear.app/";
+          const issues = request2?.user?.assignedIssues.nodes || [];
 
-          // Open the URL.
-          vscode.env.openExternal(
-            vscode.Uri.parse(
-              urlPrefix +
-                request?.issueVcsBranchSearch.team.organization.urlKey +
-                "/issue/" +
-                request?.issueVcsBranchSearch.identifier
-            )
-          );
-        } else {
-          vscode.window.showInformationMessage(
-            `No Linear issue could be found matching the branch name ${branchName} in the authenticated workspace.`
-          );
+          const cycleNumbers = issues.map((i) => i.cycle?.number || 0);
+
+          const maxCycle = Math.max(...cycleNumbers);
+          const curIssues =
+            issues?.filter((i) => i.cycle?.number === maxCycle || 0) || [];
+
+          const quickPick = window.createQuickPick();
+          quickPick.items = curIssues.map((i) => ({
+            label: i.identifier,
+            detail: `${i.identifier}: ${i.title}`,
+          }));
+          quickPick.onDidAccept(() => {
+            getBranchInput(quickPick.activeItems[0].label);
+          });
+          quickPick.show();
         }
       } catch (error) {
         vscode.window.showErrorMessage(

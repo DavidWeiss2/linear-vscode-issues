@@ -1,12 +1,14 @@
-# Open issue in Linear
+[Under-development]
 
-VS Code extension that opens the Linear issue you're currently working on based on the Git branch name you're currently on.
+# Create git branch from Linear issue
+
+VS Code extension that creates a git branch from a Linear issue you're currently assigned for in the latest cycle.
 
 Once installed, just go to the command menu with:
 
 `Cmd + Shift + P`
 
-And type "Open issue". You'll see a command called "Linear: Open issue" appear.
+And type "Linear". You'll see a command called "Linear: Create branch" appear.
 
 This extension uses our VS Code Linear API authentication provider that is exposed by the [linear-connect](https://marketplace.visualstudio.com/items?itemName=Linear.linear-connect) extension. Feel free to use that in your own extensions!
 
