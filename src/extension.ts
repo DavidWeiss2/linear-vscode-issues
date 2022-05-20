@@ -23,11 +23,13 @@ async function getBranchInput(issueLabel: string) {
     title: "enter branch name:",
     value: `${issueLabel}-`,
   });
-  branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
-  window.showInformationMessage(`creating branch: ${branch}`);
-  let wf = vscode.workspace.workspaceFolders[0].uri.path;
-  const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
-  window.showInformationMessage(`done!`);
+  if (branch) {
+    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
+    window.showInformationMessage(`creating branch: ${branch}`);
+    let wf = vscode.workspace.workspaceFolders[0].uri.path;
+    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
+    window.showInformationMessage(`done!`);
+  }
 }
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
@@ -108,11 +110,11 @@ export function activate(context: vscode.ExtensionContext) {
 
           const quickPick = window.createQuickPick();
           quickPick.items = curIssues.map((i) => ({
-            label: i.identifier,
-            detail: `${i.identifier}: ${i.title}`,
+            label: `${i.identifier}: ${i.title}`,
+            detail: ``,
           }));
           quickPick.onDidAccept(() => {
-            getBranchInput(quickPick.activeItems[0].label);
+            getBranchInput(quickPick.activeItems[0].label.split(":")[0]);
           });
           quickPick.show();
         }
