@@ -19,9 +19,10 @@ const execShell = (cmd: string) =>
     });
   });
 async function getBranchInput(issueLabel: string) {
+  const issueLabelFmt = issueLabel.toLowerCase()
   let branch = await window.showInputBox({
     title: "enter branch name:",
-    value: `${issueLabel}-`,
+    value: `${issueLabelFmt}-`,
   });
   if (branch) {
     branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
