@@ -8,7 +8,7 @@ import { window } from "vscode";
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
 const LINEAR_AUTHENTICATION_SCOPES = ["read"];
-const SPRINT_DURATION = 14; // days
+const SPRINT_TIME_QUERY = "-P2W"; // past 2 weeks
 
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
@@ -67,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
           user(id: "${userId}") {
             id
             name
-            assignedIssues {
+            assignedIssues (filter: {cycle : {startsAt: {gt: "${SPRINT_TIME_QUERY}"} }}) {
               nodes {
                 title
                 identifier
@@ -80,14 +80,14 @@ export function activate(context: vscode.ExtensionContext) {
         }`);
 
           const issues = request2?.user?.assignedIssues.nodes || [];
-
-          const curIssues =
-            issues?.filter(
-              (i) => daysSince(i.cycle?.startsAt) < SPRINT_DURATION || 0
-            ) || [];
+          console.log(issues);
+          // const curIssues =
+          //   issues?.filter(
+          //     (i) => daysSince(i.cycle?.startsAt) < SPRINT_DURATION || 0
+          //   ) || [];
 
           const quickPick = window.createQuickPick();
-          quickPick.items = curIssues.map((i) => ({
+          quickPick.items = issues.map((i) => ({
             label: `${i.identifier}: ${i.title}`,
             detail: ``,
           }));
