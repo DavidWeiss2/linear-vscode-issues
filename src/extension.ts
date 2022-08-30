@@ -80,11 +80,6 @@ export function activate(context: vscode.ExtensionContext) {
         }`);
 
           const issues = request2?.user?.assignedIssues.nodes || [];
-          console.log(issues);
-          // const curIssues =
-          //   issues?.filter(
-          //     (i) => daysSince(i.cycle?.startsAt) < SPRINT_DURATION || 0
-          //   ) || [];
 
           const quickPick = window.createQuickPick();
           quickPick.items = issues.map((i) => ({
