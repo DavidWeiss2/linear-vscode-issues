@@ -8,30 +8,8 @@ import { window } from "vscode";
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
 const LINEAR_AUTHENTICATION_SCOPES = ["read"];
+const SPRINT_DURATION = 14; // days
 
-const execShell = (cmd: string) =>
-  new Promise<string>((resolve, reject) => {
-    cp.exec(cmd, (err, out) => {
-      if (err) {
-        return reject(err);
-      }
-      return resolve(out);
-    });
-  });
-async function getBranchInput(issueLabel: string) {
-  const issueLabelFmt = issueLabel.toLowerCase()
-  let branch = await window.showInputBox({
-    title: "enter branch name:",
-    value: `${issueLabelFmt}-`,
-  });
-  if (branch) {
-    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
-    window.showInformationMessage(`creating branch: ${branch}`);
-    let wf = vscode.workspace.workspaceFolders[0].uri.path;
-    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
-    window.showInformationMessage(`done!`);
-  }
-}
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
     "linear-create-branch.createBranch",
@@ -94,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
                 title
                 identifier
                 cycle {
-                  number
+                  startsAt
                 }
               }
             }
@@ -103,11 +81,10 @@ export function activate(context: vscode.ExtensionContext) {
 
           const issues = request2?.user?.assignedIssues.nodes || [];
 
-          const cycleNumbers = issues.map((i) => i.cycle?.number || 0);
-
-          const maxCycle = Math.max(...cycleNumbers);
           const curIssues =
-            issues?.filter((i) => i.cycle?.number === maxCycle || 0) || [];
+            issues?.filter(
+              (i) => daysSince(i.cycle?.startsAt) < SPRINT_DURATION || 0
+            ) || [];
 
           const quickPick = window.createQuickPick();
           quickPick.items = curIssues.map((i) => ({
@@ -131,3 +108,33 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+function daysSince(dateStr: string) {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const msSince: number = now.getTime() - date.getTime();
+  return msSince / 60 / 60 / 24 / 1000;
+}
+const execShell = (cmd: string) =>
+  new Promise<string>((resolve, reject) => {
+    cp.exec(cmd, (err, out) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(out);
+    });
+  });
+async function getBranchInput(issueLabel: string) {
+  const issueLabelFmt = issueLabel.toLowerCase();
+  let branch = await window.showInputBox({
+    title: "enter branch name:",
+    value: `${issueLabelFmt}-`,
+  });
+  if (branch) {
+    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
+    window.showInformationMessage(`creating branch: ${branch}`);
+    let wf = vscode.workspace.workspaceFolders[0].uri.path;
+    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
+    window.showInformationMessage(`done!`);
+  }
+}
