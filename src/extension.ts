@@ -146,12 +146,17 @@ export function activate(context: vscode.ExtensionContext) {
             const issue = await linearClient.createIssue({
               teamId: quickPick.activeItems[0].value,
               title,
+              assigneeId: me.id,
             });
             const i = await issue.issue;
             const url = await i?.url;
             if (url) {
+              vscode.env.openExternal(vscode.Uri.parse(url));
               vscode.window
-                .showInformationMessage(`Issue created successfully`, "Open Issue")
+                .showInformationMessage(
+                  `Issue created successfully`,
+                  "Open Issue"
+                )
                 .then(() => {
                   vscode.env.openExternal(vscode.Uri.parse(url));
                 });
