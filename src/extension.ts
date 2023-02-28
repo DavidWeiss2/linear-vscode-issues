@@ -1,4 +1,4 @@
-import { LinearClient } from "@linear/sdk";
+import { LinearClient, ViewerQuery } from "@linear/sdk";
 import * as cp from "child_process";
 import * as vscode from "vscode";
 import { window } from "vscode";
@@ -7,7 +7,7 @@ import { window } from "vscode";
  */
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
-const LINEAR_AUTHENTICATION_SCOPES = ["read"];
+const LINEAR_AUTHENTICATION_SCOPES = ["read", "issues:create"];
 const SPRINT_TIME_QUERY = "-P2W"; // past 2 weeks
 
 export function activate(context: vscode.ExtensionContext) {
@@ -104,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 
   const disposable2 = vscode.commands.registerCommand(
-    "linear-create-branch.createTicket",
+    "linear-create-branch.createIssue",
     async () => {
       const session = await vscode.authentication.getSession(
         LINEAR_AUTHENTICATION_PROVIDER_ID,
@@ -126,32 +126,47 @@ export function activate(context: vscode.ExtensionContext) {
       // Use VS Code's built-in Git extension API to get the current branch name.
 
       try {
-        const request: {
-          viewer: {
-            id: string;
-            name: string;
-            email: string;
-          } | null;
-        } | null = await linearClient.client.request(`query Me {
-          viewer {
-            id
-            name
-            email
+        const me = await linearClient.viewer;
+
+        const teams = await me.teams();
+
+        const quickPick = window.createQuickPick();
+        quickPick.items = teams.nodes.map((team) => ({
+          label: team.name,
+          detail: team.key,
+          value: team.id,
+        }));
+        quickPick.onDidAccept(async () => {
+          const title = await vscode.window.showInputBox({
+            placeHolder: "Issue title",
+            prompt: "",
+            value: "",
+          });
+          if (title) {
+            const issue = await linearClient.createIssue({
+              teamId: quickPick.activeItems[0].value,
+              title,
+            });
+            const i = await issue.issue;
+            const url = await i?.url;
+            if (url) {
+              vscode.window
+                .showInformationMessage(`Issue created successfully`, "Open Issue")
+                .then(() => {
+                  vscode.env.openExternal(vscode.Uri.parse(url));
+                });
+            }
           }
-        }`);
-        const title = await vscode.window.showInputBox({
-          placeHolder: "Search query",
-          prompt: "Search my snippets on Codever",
-          value: "",
         });
-        await linearClient.createIssue({ title });
+        quickPick.show();
       } catch (error) {
         vscode.window.showErrorMessage(
-          `An error occurred while trying to create linear ticket. Error: ${error}`
+          `An error occurred while trying to create linear issue. Error: ${error}`
         );
       }
     }
   );
+  context.subscriptions.push(disposable2);
 }
 
 export function deactivate() {}
