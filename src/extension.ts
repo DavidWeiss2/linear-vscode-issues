@@ -139,7 +139,11 @@ export function activate(context: vscode.ExtensionContext) {
             email
           }
         }`);
-        const title = "test";
+        const title = await vscode.window.showInputBox({
+          placeHolder: "Search query",
+          prompt: "Search my snippets on Codever",
+          value: "",
+        });
         await linearClient.createIssue({ title });
       } catch (error) {
         vscode.window.showErrorMessage(
