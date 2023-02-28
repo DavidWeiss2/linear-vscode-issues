@@ -87,7 +87,9 @@ export function activate(context: vscode.ExtensionContext) {
             detail: ``,
           }));
           quickPick.onDidAccept(() => {
-            getBranchInput(quickPick.activeItems[0].label.split(":")[0]);
+            getInputAndCreateBranch(
+              quickPick.activeItems[0].label.split(":")[0]
+            );
           });
           quickPick.show();
         }
@@ -100,6 +102,52 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+
+  const disposable2 = vscode.commands.registerCommand(
+    "linear-create-branch.createTicket",
+    async () => {
+      const session = await vscode.authentication.getSession(
+        LINEAR_AUTHENTICATION_PROVIDER_ID,
+        LINEAR_AUTHENTICATION_SCOPES,
+        { createIfNone: true }
+      );
+
+      if (!session) {
+        vscode.window.showErrorMessage(
+          `We weren't able to log you into Linear when trying to open the issue.`
+        );
+        return;
+      }
+
+      const linearClient = new LinearClient({
+        accessToken: session.accessToken,
+      });
+
+      // Use VS Code's built-in Git extension API to get the current branch name.
+
+      try {
+        const request: {
+          viewer: {
+            id: string;
+            name: string;
+            email: string;
+          } | null;
+        } | null = await linearClient.client.request(`query Me {
+          viewer {
+            id
+            name
+            email
+          }
+        }`);
+        const title = "test";
+        await linearClient.createIssue({ title });
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `An error occurred while trying to create linear ticket. Error: ${error}`
+        );
+      }
+    }
+  );
 }
 
 export function deactivate() {}
@@ -119,7 +167,7 @@ const execShell = (cmd: string) =>
       return resolve(out);
     });
   });
-async function getBranchInput(issueLabel: string) {
+async function getInputAndCreateBranch(issueLabel: string) {
   const issueLabelFmt = issueLabel.toLowerCase();
   let branch = await window.showInputBox({
     title: "enter branch name:",

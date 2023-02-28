@@ -32,6 +32,10 @@
       {
         "command": "linear-create-branch.createBranch",
         "title": "Linear: Create branch"
+      },
+      {
+        "command": "linear-create-branch.createTicket",
+        "title": "Linear: Create ticket"
       }
     ],
     "configuration": {
