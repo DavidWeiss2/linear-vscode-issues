@@ -1,4 +1,4 @@
-import { LinearClient } from "@linear/sdk";
+import { LinearClient, ViewerQuery } from "@linear/sdk";
 import * as cp from "child_process";
 import * as vscode from "vscode";
 import { window } from "vscode";
@@ -7,7 +7,7 @@ import { window } from "vscode";
  */
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
-const LINEAR_AUTHENTICATION_SCOPES = ["read"];
+const LINEAR_AUTHENTICATION_SCOPES = ["read", "issues:create"];
 const SPRINT_TIME_QUERY = "-P2W"; // past 2 weeks
 
 export function activate(context: vscode.ExtensionContext) {
@@ -87,7 +87,9 @@ export function activate(context: vscode.ExtensionContext) {
             detail: ``,
           }));
           quickPick.onDidAccept(() => {
-            getBranchInput(quickPick.activeItems[0].label.split(":")[0]);
+            getInputAndCreateBranch(
+              quickPick.activeItems[0].label.split(":")[0]
+            );
           });
           quickPick.show();
         }
@@ -100,6 +102,71 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+
+  const disposable2 = vscode.commands.registerCommand(
+    "linear-create-branch.createIssue",
+    async () => {
+      const session = await vscode.authentication.getSession(
+        LINEAR_AUTHENTICATION_PROVIDER_ID,
+        LINEAR_AUTHENTICATION_SCOPES,
+        { createIfNone: true }
+      );
+
+      if (!session) {
+        vscode.window.showErrorMessage(
+          `We weren't able to log you into Linear when trying to open the issue.`
+        );
+        return;
+      }
+
+      const linearClient = new LinearClient({
+        accessToken: session.accessToken,
+      });
+
+      // Use VS Code's built-in Git extension API to get the current branch name.
+
+      try {
+        const me = await linearClient.viewer;
+
+        const teams = await me.teams();
+
+        const quickPick = window.createQuickPick();
+        quickPick.items = teams.nodes.map((team) => ({
+          label: team.name,
+          detail: team.key,
+          value: team.id,
+        }));
+        quickPick.onDidAccept(async () => {
+          const title = await vscode.window.showInputBox({
+            placeHolder: "Issue title",
+            prompt: "",
+            value: "",
+          });
+          if (title) {
+            const issue = await linearClient.createIssue({
+              teamId: quickPick.activeItems[0].value,
+              title,
+            });
+            const i = await issue.issue;
+            const url = await i?.url;
+            if (url) {
+              vscode.window
+                .showInformationMessage(`Issue created successfully`, "Open Issue")
+                .then(() => {
+                  vscode.env.openExternal(vscode.Uri.parse(url));
+                });
+            }
+          }
+        });
+        quickPick.show();
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `An error occurred while trying to create linear issue. Error: ${error}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(disposable2);
 }
 
 export function deactivate() {}
@@ -119,7 +186,7 @@ const execShell = (cmd: string) =>
       return resolve(out);
     });
   });
-async function getBranchInput(issueLabel: string) {
+async function getInputAndCreateBranch(issueLabel: string) {
   const issueLabelFmt = issueLabel.toLowerCase();
   let branch = await window.showInputBox({
     title: "enter branch name:",
