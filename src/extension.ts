@@ -1,4 +1,4 @@
-import { LinearClient, ViewerQuery } from "@linear/sdk";
+import { LinearClient, Team, ViewerQuery } from "@linear/sdk";
 import * as cp from "child_process";
 import * as vscode from "vscode";
 import { window } from "vscode";
@@ -129,12 +129,11 @@ export function activate(context: vscode.ExtensionContext) {
         const me = await linearClient.viewer;
 
         const teams = await me.teams();
-
         const quickPick = window.createQuickPick();
         quickPick.items = teams.nodes.map((team) => ({
           label: team.name,
           detail: team.key,
-          value: team.id,
+          team,
         }));
         quickPick.onDidAccept(async () => {
           const title = await vscode.window.showInputBox({
@@ -142,11 +141,17 @@ export function activate(context: vscode.ExtensionContext) {
             prompt: "",
             value: "",
           });
+
           if (title) {
+            const team = quickPick.activeItems[0].team as Team;
+            const states = await team.states();
+            const state_nodes = await states.nodes
+            const inprog = state_nodes.filter(s=>s.type==='started')
             const issue = await linearClient.createIssue({
-              teamId: quickPick.activeItems[0].value,
+              teamId: team.id,
               title,
               assigneeId: me.id,
+              stateId: inprog[0].id,
             });
             const i = await issue.issue;
             const url = await i?.url;
