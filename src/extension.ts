@@ -206,7 +206,7 @@ async function getInputAndCreateBranch(issueLabel: string) {
     branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
     window.showInformationMessage(`creating branch: ${branch}`);
     let wf = vscode.workspace.workspaceFolders[0].uri.path;
-    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
+    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch} master`);
     window.showInformationMessage(`done!`);
   }
 }
