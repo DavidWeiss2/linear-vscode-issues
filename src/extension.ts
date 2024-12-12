@@ -47,6 +47,9 @@ export function activate(context: vscode.ExtensionContext) {
                 linearClient,
                 value
               );
+              if(searchIssues.length === 0) {
+                return;
+              }
               quickPick.items = searchIssues.concat(issues).map((i) => ({
                 label: `${i.identifier}: ${i.title}`,
                 detail: ``,
@@ -56,13 +59,16 @@ export function activate(context: vscode.ExtensionContext) {
         });
 
         quickPick.onDidChangeValue((value) => {
-          if (value?.match(/^\w*\-?\d/)) {
+          if (value?.match(/^\w*\-?\d/) && quickPick.activeItems.length === 0) {
             quickPick.items = [
               {
                 label: `Create branch: ${value}`,
                 detail: "",
               }
-            ]
+            ].concat(issues.map((i) => ({
+              label: `${i.identifier}: ${i.title}`,
+              detail: i.cycle?.number ? `Sprint ${i.cycle.number}` : "",
+            })));
           }
         });
 
