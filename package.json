@@ -5,7 +5,7 @@
   "publisher": "DavidWeiss2",
   "author": "GP",
   "license": "MIT",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "icon": "assets/128x128.png",
   "repository": {
     "type": "git",
@@ -17,7 +17,8 @@
   "activationEvents": [
     "onCommand:linear-git-tools.createBranch",
     "onCommand:linear-git-tools.createIssue",
-    "onCommand:linear-git-tools.openIssue"
+    "onCommand:linear-git-tools.openIssue",
+    "onCommand:linear-git-tools.updateIssue"
   ],
   "categories": [
     "Other"
@@ -42,6 +43,10 @@
       {
         "command": "linear-git-tools.openIssue",
         "title": "Linear Git Tools: Open Linear issue"
+      },
+      {
+        "command": "linear-git-tools.updateIssue",
+        "title": "Linear Git Tools: Update Linear issue field"
       }
     ],
     "configuration": {
@@ -68,11 +73,11 @@
   },
   "devDependencies": {
     "@types/node": "14.x",
-    "@types/vscode": "^1.65.0",
-    "esbuild": "^0.14.29",
-    "typescript": "^4.5.5"
+    "@types/vscode": "^1.75.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@linear/sdk": "^2.4.0"
+    "@linear/sdk": "^34.0.0"
   }
 }

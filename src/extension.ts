@@ -179,7 +179,7 @@ export function activate(context: vscode.ExtensionContext) {
           // Preference to open the issue in the desktop app or in the browser.
           const urlPrefix = vscode.workspace
             .getConfiguration()
-            .get<boolean>("openInDesktopApp")
+            .get<boolean>("linear-git-tools.openInDesktopApp")
             ? "linear://"
             : "https://linear.app/";
 
@@ -206,6 +206,116 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(openLinearIssueCommandDisposable);
+
+  const updateLinearIssueStatusCommandDisposable =
+    vscode.commands.registerCommand(`${NAMESPACE}.updateIssue`, async () => {
+      const linearClient = await getLinearClient();
+
+      // Use VS Code's built-in Git extension API to get the current branch name.
+      const gitExtension =
+        vscode.extensions.getExtension<GitExtension>("vscode.git")?.exports;
+      const git = gitExtension?.getAPI(1);
+      const branchName = git?.repositories[0]?.state.HEAD?.name;
+
+      try {
+        const request: {
+          issueVcsBranchSearch: {
+            identifier: string;
+            team: {
+              organization: {
+                urlKey: string;
+              };
+            };
+          } | null;
+        } | null = await linearClient.client.request(`query {
+            issueVcsBranchSearch(branchName: "${branchName}") {
+              identifier
+              team {
+                organization {
+                  urlKey
+                }
+              }
+            }
+          }`);
+
+        const issueId = request?.issueVcsBranchSearch?.identifier;
+        if (!issueId) {
+          vscode.window.showErrorMessage(
+            `No issue found for the current branch`
+          );
+          return;
+        }
+        const issue = await linearClient.issue(issueId);
+        const updatableFieldsNames = [
+          "priority",
+          "title",
+          "description",
+        ] satisfies (keyof Parameters<(typeof issue)["update"]>[0])[];
+        const availableCommands: {
+          title: string;
+          inputMessage: string;
+          placeholder: string;
+          successMessage: string;
+          callback: (userInput: string) => void;
+          errorMessage: string;
+        }[] = updatableFieldsNames.map((fieldName) => {
+          return {
+            title: `Update ${fieldName}`,
+            inputMessage: issue[fieldName] as string,
+            successMessage: `Issue ${fieldName} updated successfully`,
+            callback: async (userInput: string) => {
+              await issue.update({
+                [fieldName]: userInput,
+              });
+            },
+            placeholder: issue[fieldName] as string,
+            errorMessage: `An error occurred while trying to update ${fieldName}`,
+          };
+        });
+
+        const quickPick = window.createQuickPick<{
+          label: string;
+          detail: string;
+          index: number;
+        }>();
+        quickPick.items = availableCommands.map((command, index) => ({
+          label: `${command.title} - ${command.placeholder}`,
+          detail: "",
+          index,
+        }));
+
+        quickPick.onDidAccept(async () => {
+          const { index } = quickPick.activeItems[0];
+          const { callback, errorMessage, successMessage, inputMessage } =
+            availableCommands[index];
+          const userInput = await window.showInputBox({
+            placeHolder: inputMessage ?? "Enter status",
+            prompt: "",
+            value: "",
+          });
+          try {
+            if (!userInput) {
+              vscode.window.showInformationMessage(
+                "No input provided, cancelling"
+              );
+              return;
+            }
+            callback(userInput);
+            vscode.window.showInformationMessage(successMessage);
+          } catch (error) {
+            vscode.window.showErrorMessage(errorMessage);
+          }
+        });
+
+        quickPick.show();
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `An error occurred while trying to fetch Linear issue information. Error: ${error}`
+        );
+      }
+    });
+
+  context.subscriptions.push(updateLinearIssueStatusCommandDisposable);
 }
 
 async function getLinearClient() {
