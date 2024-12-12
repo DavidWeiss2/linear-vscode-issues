@@ -42,7 +42,7 @@
     "configuration": {
       "title": "Linear Git Tools",
       "properties": {
-        "openInDesktopApp": {
+        "linear-git-tools.openInDesktopApp": {
           "type": "boolean",
           "description": "Creates a new GIT branch from selected Linear issue"
         }
