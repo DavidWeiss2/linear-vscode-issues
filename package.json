@@ -14,6 +14,11 @@
   "engines": {
     "vscode": "^1.75.0"
   },
+  "activationEvents": [
+    "onCommand:linear-git-tools.createBranch",
+    "onCommand:linear-git-tools.createIssue",
+    "onCommand:linear-git-tools.openIssue"
+  ],
   "categories": [
     "Other"
   ],
@@ -54,6 +59,7 @@
   ],
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "publish": "vsce publish --yarn -p $VSCE_TOKEN",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/main.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
