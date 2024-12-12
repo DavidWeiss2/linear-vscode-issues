@@ -28,15 +28,15 @@
     "commands": [
       {
         "command": "linear-git-tools.createBranch",
-        "title": "Create GIT branch from Linear issue"
+        "title": "Linear Git Tools: Create GIT branch"
       },
       {
         "command": "linear-git-tools.createIssue",
-        "title": "Create Linear issue from GIT branch"
+        "title": "Linear Git Tools: Create Linear issue"
       },
       {
-        "command": "linear-git-tools.createIssueFromBranch",
-        "title": "Create Linear issue from current GIT branch"
+        "command": "linear-git-tools.openIssue",
+        "title": "Linear Git Tools: Open Linear issue"
       }
     ],
     "configuration": {
