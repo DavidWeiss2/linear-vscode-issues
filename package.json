@@ -1,7 +1,7 @@
 {
-  "name": "linear-create-branch",
-  "displayName": "Linear Create Branch",
-  "description": "Adds commands to manage GIT branches from Linear issues, and to manage Linear issues from GIT branches",
+  "name": "linear-git-tools",
+  "displayName": "Linear Git Tools",
+  "description": "Create and Open GIT branches from Linear issues and vice versa",
   "publisher": "DavidWeiss2",
   "author": "GP",
   "license": "MIT",
@@ -12,13 +12,10 @@
     "url": "https://github.com/DavidWeiss2/linear-vscode-issues"
   },
   "engines": {
-    "vscode": "^1.65.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Other"
-  ],
-  "activationEvents": [
-    "onCommand:linear-create-branch.createBranch"
   ],
   "capabilities": {
     "virtualWorkspaces": true,
@@ -30,16 +27,20 @@
   "contributes": {
     "commands": [
       {
-        "command": "linear-create-branch.createBranch",
-        "title": "Linear: Create branch"
+        "command": "linear-git-tools.createBranch",
+        "title": "Create GIT branch from Linear issue"
       },
       {
-        "command": "linear-create-branch.createIssue",
-        "title": "Linear: Create issue"
+        "command": "linear-git-tools.createIssue",
+        "title": "Create Linear issue from GIT branch"
+      },
+      {
+        "command": "linear-git-tools.createIssueFromBranch",
+        "title": "Create Linear issue from current GIT branch"
       }
     ],
     "configuration": {
-      "title": "Create GIT branch from Linear issue",
+      "title": "Linear Git Tools",
       "properties": {
         "openInDesktopApp": {
           "type": "boolean",
