@@ -11,88 +11,44 @@ const LINEAR_AUTHENTICATION_SCOPES = ["read", "issues:create"];
 const SPRINT_TIME_QUERY = "-P2W"; // past 2 weeks
 
 export function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand(
+  const createBranchCommandDisposable = vscode.commands.registerCommand(
     "linear-create-branch.createBranch",
     async () => {
-      const session = await vscode.authentication.getSession(
-        LINEAR_AUTHENTICATION_PROVIDER_ID,
-        LINEAR_AUTHENTICATION_SCOPES,
-        { createIfNone: true }
-      );
-
-      if (!session) {
-        vscode.window.showErrorMessage(
-          `We weren't able to log you into Linear when trying to open the issue.`
-        );
-        return;
-      }
-
-      const linearClient = new LinearClient({
-        accessToken: session.accessToken,
-      });
-
       // Use VS Code's built-in Git extension API to get the current branch name.
-
       try {
-        const request: {
-          viewer: {
-            id: string;
-            name: string;
-            email: string;
-          } | null;
-        } | null = await linearClient.client.request(`query Me {
-          viewer {
-            id
-            name
-            email
-          }
-        }`);
-        const userId = request?.viewer?.id;
-        if (userId) {
-          const request2: {
-            user: {
-              assignedIssues: {
-                nodes: {
-                  identifier: string;
-                  title: string;
-                  cycle: {
-                    number: number;
-                  };
-                }[];
-              };
-              id: string;
-              name: string;
-            } | null;
-          } | null = await linearClient.client.request(`query {
-          user(id: "${userId}") {
-            id
-            name
-            assignedIssues (filter: {cycle : {startsAt: {gt: "${SPRINT_TIME_QUERY}"} }}) {
-              nodes {
-                title
-                identifier
-                cycle {
-                  startsAt
-                }
-              }
-            }
-          }
-        }`);
-
-          const issues = request2?.user?.assignedIssues.nodes || [];
-
-          const quickPick = window.createQuickPick();
-          quickPick.items = issues.map((i) => ({
-            label: `${i.identifier}: ${i.title}`,
-            detail: ``,
-          }));
-          quickPick.onDidAccept(() => {
-            getInputAndCreateBranch(
-              quickPick.activeItems[0].label.split(":")[0]
-            );
-          });
-          quickPick.show();
+        const session = await vscode.authentication.getSession(
+          LINEAR_AUTHENTICATION_PROVIDER_ID,
+          LINEAR_AUTHENTICATION_SCOPES,
+          { createIfNone: true }
+        );
+  
+        if (!session) {
+          vscode.window.showErrorMessage(
+            `We weren't able to log you into Linear when trying to open the issue.`
+          );
+          return;
         }
+  
+        const linearClient = new LinearClient({
+          accessToken: session.accessToken,
+        });
+        const userId = await fetchUserId(linearClient);
+        if (!userId) {
+          window.showErrorMessage(`No user found`);
+          return;
+        }
+        const issues =
+          (await fetchUserAssignedIssues(linearClient, userId)) ?? [];
+
+        const quickPick = window.createQuickPick();
+        quickPick.items = issues.map((i) => ({
+          label: `${i.identifier}: ${i.title}`,
+          detail: ``,
+        }));
+        quickPick.onDidAccept(() => {
+          getInputAndCreateBranch(quickPick.activeItems[0].label.split(":")[0]);
+        });
+        quickPick.show();
       } catch (error) {
         vscode.window.showErrorMessage(
           `An error occurred while trying to fetch Linear issue information. Error: ${error}`
@@ -101,9 +57,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(disposable);
+  context.subscriptions.push(createBranchCommandDisposable);
 
-  const disposable2 = vscode.commands.registerCommand(
+  const createLinearIssueCommand = vscode.commands.registerCommand(
     "linear-create-branch.createIssue",
     async () => {
       const session = await vscode.authentication.getSession(
@@ -130,7 +86,11 @@ export function activate(context: vscode.ExtensionContext) {
 
         const teams = await me.teams();
 
-        const quickPick = window.createQuickPick();
+        const quickPick = window.createQuickPick<{
+          label: string;
+          detail: string;
+          value: string;
+        }>();
         quickPick.items = teams.nodes.map((team) => ({
           label: team.name,
           detail: team.key,
@@ -142,22 +102,41 @@ export function activate(context: vscode.ExtensionContext) {
             prompt: "",
             value: "",
           });
-          if (title) {
-            const issue = await linearClient.createIssue({
+          if (!title) {
+            vscode.window.showErrorMessage(`No title found`);
+            return;
+          }
+          const issue = await linearClient
+            .createIssue({
               teamId: quickPick.activeItems[0].value,
               title,
+            })
+            .then((issue) => (issue.success ? issue.issue : undefined))
+            .catch(() => undefined);
+
+          const url = issue?.url;
+          if (!url) {
+            vscode.window.showErrorMessage(`Issue not created`);
+            return;
+          }
+          vscode.window
+            .showInformationMessage(`Issue created successfully`, "Open Issue")
+            .then(() => {
+              vscode.env.openExternal(vscode.Uri.parse(url));
             });
-            const i = await issue.issue;
-            const url = await i?.url;
-            if (url) {
-              vscode.window
-                .showInformationMessage(`Issue created successfully`, "Open Issue")
-                .then(() => {
-                  vscode.env.openExternal(vscode.Uri.parse(url));
-                });
-            }
+        });
+
+        quickPick.onDidChangeValue(async (value) => {
+          if (value) {
+            const issues = await fetchIssuesWithSearch(linearClient, value);
+            quickPick.items = issues.map((i) => ({
+              label: `${i.identifier}: ${i.title}`,
+              detail: ``,
+              value: i.identifier,
+            }));
           }
         });
+
         quickPick.show();
       } catch (error) {
         vscode.window.showErrorMessage(
@@ -166,17 +145,91 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   );
-  context.subscriptions.push(disposable2);
+  context.subscriptions.push(createLinearIssueCommand);
+}
+
+async function fetchUserId(linearClient: LinearClient) {
+  return (
+    (await linearClient.client.request(`query {
+          viewer {
+            id
+          }
+        }`)) as {
+      viewer: {
+        id: string;
+      } | null;
+    } | null
+  )?.viewer?.id;
+}
+
+async function fetchUserAssignedIssues(
+  linearClient: LinearClient,
+  userId: string
+) {
+  return (
+    (await linearClient.client.request(`query {
+          user(id: "${userId}") {
+            id
+            name
+            assignedIssues (filter: {cycle : {startsAt: {gt: "${SPRINT_TIME_QUERY}"} }}) {
+              nodes {
+                title
+                identifier
+                cycle {
+                  startsAt
+                }
+              }
+            }
+          }
+        }`)) as {
+      user: {
+        assignedIssues: {
+          nodes: {
+            identifier: string;
+            title: string;
+            cycle: {
+              number: number;
+            };
+          }[];
+        };
+        id: string;
+        name: string;
+      } | null;
+    } | null
+  )?.user?.assignedIssues.nodes;
+}
+
+async function fetchIssuesWithSearch(
+  linearClient: LinearClient,
+  query: string
+) {
+  return (
+    (await linearClient.client.request(`query {
+          issues(search: "${query}") {
+            nodes {
+              title
+              identifier
+              cycle {
+                startsAt
+              }
+            }
+          }
+        }`)) as {
+      issues: {
+        nodes: {
+          identifier: string;
+          title: string;
+          cycle: {
+            number: number;
+          };
+        }[];
+      };
+    }
+  ).issues.nodes;
 }
 
 export function deactivate() {}
 
-function daysSince(dateStr: string) {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const msSince: number = now.getTime() - date.getTime();
-  return msSince / 60 / 60 / 24 / 1000;
-}
 const execShell = (cmd: string) =>
   new Promise<string>((resolve, reject) => {
     cp.exec(cmd, (err, out) => {
@@ -195,7 +248,11 @@ async function getInputAndCreateBranch(issueLabel: string) {
   if (branch) {
     branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
     window.showInformationMessage(`creating branch: ${branch}`);
-    let wf = vscode.workspace.workspaceFolders[0].uri.path;
+    let wf = vscode.workspace.workspaceFolders?.[0].uri.path;
+    if (!wf) {
+      window.showErrorMessage(`No workspace folder found`);
+      return;
+    }
     const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
     window.showInformationMessage(`done!`);
   }
