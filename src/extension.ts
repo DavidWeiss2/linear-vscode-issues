@@ -38,14 +38,31 @@ export function activate(context: vscode.ExtensionContext) {
           getInputAndCreateBranch(quickPick.activeItems[0].label.split(":")[0]);
         });
 
+        let timeout: NodeJS.Timeout;
         quickPick.onDidChangeValue(async (value) => {
-          if (value) {
-            const issues = await fetchIssuesWithSearch(linearClient, value);
-            quickPick.items = issues.map((i) => ({
-              label: `${i.identifier}: ${i.title}`,
-              detail: ``,
-              value: i.identifier,
-            }));
+          clearTimeout(timeout);
+          timeout = setTimeout(async () => {
+            if (value) {
+              const searchIssues = await fetchIssuesWithSearch(
+                linearClient,
+                value
+              );
+              quickPick.items = searchIssues.concat(issues).map((i) => ({
+                label: `${i.identifier}: ${i.title}`,
+                detail: ``,
+              }));
+            }
+          }, 500);
+        });
+
+        quickPick.onDidChangeValue((value) => {
+          if (value?.match(/^\w*\-?\d/)) {
+            quickPick.items = [
+              {
+                label: `Create branch: ${value}`,
+                detail: "",
+              }
+            ]
           }
         });
 
@@ -260,9 +277,8 @@ async function fetchIssuesWithSearch(
   linearClient: LinearClient,
   query: string
 ) {
-  return (
-    (await linearClient.client.request(`query {
-          issues(search: "${query}") {
+  const queryString = `query {
+      issues(filter: { title: { containsIgnoreCase: "${query}" }}) {
             nodes {
               title
               identifier
@@ -271,7 +287,9 @@ async function fetchIssuesWithSearch(
               }
             }
           }
-        }`)) as {
+        }`;
+  return (
+    (await linearClient.client.request(queryString)) as {
       issues: {
         nodes: {
           identifier: string;
