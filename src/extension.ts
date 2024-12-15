@@ -448,15 +448,15 @@ async function getInputAndCreateBranch(issueLabel: string) {
 
   const chosenIssue = issueLabel;
   const issueLabelId = chosenIssue.split(":")[0];
-  const issueName = includeIssueName ? chosenIssue.replace(/:\s+/g, "-").toLowerCase().slice(0, maxCharactersFromIssueName) : issueLabelId;
+  const issueName = includeIssueName ? chosenIssue.slice(0, maxCharactersFromIssueName) : issueLabelId;
 
   let branch = await window.showInputBox({
     title: "enter branch name:",
-    value: `${issueName}`,
+    value: `${issueName}`.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9 ]+/g, ""),
   });
 
   if (branch) {
-    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-");
+    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9 ]+/g, "");
     window.showInformationMessage(`creating branch: ${branch}`);
     let wf = workspace.workspaceFolders?.[0].uri.path;
     if (!wf) {
