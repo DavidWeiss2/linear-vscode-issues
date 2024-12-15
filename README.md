@@ -1,5 +1,3 @@
-[Under-development]
-
 # Linear Git Tools
 
 VS Code extension that creates and opens GIT branches from Linear issues and vice versa.
@@ -13,6 +11,22 @@ And type "Linear Git Tools". You'll see commands like "Linear Git Tools: Create 
 This extension uses our VS Code Linear API authentication provider that is exposed by the [linear-connect](https://marketplace.visualstudio.com/items?itemName=Linear.linear-connect) extension. Feel free to use that in your own extensions!
 
 ---
+
+## Features
+
+- Create GIT branches from Linear issues
+- Create Linear issues from VS Code
+- Open Linear issues from VS Code
+- Update Linear issue fields
+
+## Configuration
+
+You can configure the extension with the following settings:
+
+- `linear-git-tools.openInDesktopApp`: Open the issue in the Linear desktop app instead of the browser. (default: `false`)
+- `linear-git-tools.includeIssueNameInBranch`: Include the issue name in the new branch name. (default: `true`)
+- `linear-git-tools.maxCharactersFromIssueName`: Maximum number of characters to include from the issue name in the new branch name. (default: `35`)
+- `linear-git-tools.autoCheckoutBranchAfterIssueCreation`: Automatically checkout the new branch after creation of the issue. Options: `ask`, `yes`, `no`. (default: `ask`)
 
 ## Developing & Contributing
 
