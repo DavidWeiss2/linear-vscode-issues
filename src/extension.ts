@@ -1,15 +1,37 @@
 import { LinearClient } from "@linear/sdk";
 import { exec } from "child_process";
-import { authentication, commands, env, ExtensionContext, extensions, Uri, window, workspace } from "vscode";
+import {
+  authentication,
+  commands,
+  env,
+  ExtensionContext,
+  extensions,
+  QuickPickItem as VSCodeQuickPickItem,
+  QuickPickItemKind,
+  ThemeIcon,
+  Uri,
+  window,
+  workspace,
+} from "vscode";
 import { GitExtension } from "./types.d/git";
-/**
- * This extension registers the "Open in Linear command" upon activation.
- */
+
+type Issue = Pick<
+  Awaited<ReturnType<LinearClient["issue"]>>,
+  "identifier" | "title" | "branchName"
+>;
+
+interface QuickPickItem extends VSCodeQuickPickItem {
+  issue?: Issue;
+}
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
 const LINEAR_AUTHENTICATION_SCOPES = ["read", "issues:create"];
-const SPRINT_TIME_QUERY = "-P2W"; // past 2 weeks
 const NAMESPACE = "linear-git-tools";
+
+const isMe = { isMe: { eq: true } };
+const True = { eq: true };
+const False = { neq: true };
+const MINIMUM_ITEMS_ACTIVE_BEFORE_SEARCH = 5;
 
 export function activate(context: ExtensionContext) {
   const createBranchCommandDisposable = commands.registerCommand(
@@ -17,58 +39,91 @@ export function activate(context: ExtensionContext) {
     async () => {
       try {
         const linearClient = await getLinearClient();
-        const userId = await fetchUserId(linearClient);
 
-        if (!userId) {
-          window.showErrorMessage(`No user found`);
-          return;
+        const issueConnection = (await fetchUserIssues(linearClient)) ?? [];
+        const issues: Pick<
+          (typeof issueConnection.nodes)[number],
+          "identifier" | "title" | "branchName"
+        >[] = issueConnection.nodes ?? []; // todo: handle pagination
+
+        const quickPick = window.createQuickPick<QuickPickItem>();
+        const actions: {
+          tooltip: string;
+          action: () => void;
+          iconId: string;
+        }[] = [
+          {
+            tooltip: "Create new issue",
+            action: () => commands.executeCommand(`${NAMESPACE}.createIssue`),
+            iconId: "add",
+          },
+        ];
+
+        // quickPick.buttons = actions.map(({iconId,tooltip,action})=>({iconPath:new ThemeIcon(iconId),tooltip,action}));
+        quickPick.title = "Select an issue to create a branch for";
+
+        const issueItems = issues.map(toIssueItem);
+
+        function toIssueItem(issue: Issue): QuickPickItem {
+          return {
+            label: `${issue.identifier}: ${issue.title}`,
+            detail: issue.branchName ? `Branch: ${issue.branchName}` : "",
+            issue,
+          };
         }
 
-        const issues =
-          (await fetchUserAssignedIssues(linearClient, userId)) ?? [];
+        const separatorItem = {
+          label: "actions",
+          kind: QuickPickItemKind.Separator,
+        } satisfies QuickPickItem;
 
-        const quickPick = window.createQuickPick();
-        quickPick.items = issues.map((i) => ({
-          label: `${i.identifier}: ${i.title}`,
-          detail: i.cycle?.number ? `Sprint ${i.cycle.number}` : "",
-        }));
+        const actionsItems = actions.map(
+          ({ iconId, tooltip }) =>
+            ({
+              iconPath: new ThemeIcon(iconId),
+              label: tooltip,
+              kind: QuickPickItemKind.Default,
+              alwaysShow: true,
+            } satisfies QuickPickItem)
+        );
 
-        quickPick.onDidAccept(() => {
-          getInputAndCreateBranch(quickPick.activeItems[0].label);
+        const items = [
+          ...actionsItems,
+          separatorItem,
+          ...issueItems,
+        ] as const satisfies QuickPickItem[];
+
+        quickPick.items = items;
+
+        quickPick.onDidAccept(async (selected) => {
+          const item = quickPick.activeItems[0];
+          if (!item.issue) {
+            const action = actions.find((a) => a.tooltip === item.label);
+            if (action) {
+              return action.action();
+            }
+            return;
+          }
+          quickPick.dispose();
+          // return createBranch(issueRes.branchName);
         });
 
         let timeout: NodeJS.Timeout;
         quickPick.onDidChangeValue(async (value) => {
           clearTimeout(timeout);
           timeout = setTimeout(async () => {
-            if (value) {
+            if (
+              value &&
+              quickPick.activeItems.length < MINIMUM_ITEMS_ACTIVE_BEFORE_SEARCH
+            ) {
               const searchIssues = await fetchIssuesWithSearch(
                 linearClient,
                 value
-              );
-              if (searchIssues.length === 0) {
-                return;
-              }
-              quickPick.items = searchIssues.concat(issues).map((i) => ({
-                label: `${i.identifier}: ${i.title}`,
-                detail: ``,
-              }));
+              ).then((res) => res.nodes);
+
+              quickPick.items = items.concat(searchIssues.map(toIssueItem));
             }
           }, 500);
-        });
-
-        quickPick.onDidChangeValue((value) => {
-          if (value?.match(/^\w*\-?\d/) && quickPick.activeItems.length === 0) {
-            quickPick.items = [
-              {
-                label: `Create branch: ${value}`,
-                detail: "",
-              }
-            ].concat(issues.map((i) => ({
-              label: `${i.identifier}: ${i.title}`,
-              detail: i.cycle?.number ? `Sprint ${i.cycle.number}` : "",
-            })));
-          }
         });
 
         quickPick.show();
@@ -126,19 +181,35 @@ export function activate(context: ExtensionContext) {
             return;
           }
           window
-            .showInformationMessage(`Issue created successfully ${issue.identifier}`, "Open Issue")
+            .showInformationMessage(
+              `Issue created successfully ${issue.identifier}`,
+              "Open Issue"
+            )
             .then(() => {
               env.openExternal(Uri.parse(url));
-            }).then(() => {
-              const autoCheckoutBranchAfterIssueCreation: "ask" | "yes" | "no" = workspace.getConfiguration().get("linear-git-tools.autoCheckoutBranchAfterIssueCreation", "ask");
+            })
+            .then(() => {
+              const autoCheckoutBranchAfterIssueCreation: "ask" | "yes" | "no" =
+                workspace
+                  .getConfiguration()
+                  .get(
+                    "linear-git-tools.autoCheckoutBranchAfterIssueCreation",
+                    "ask"
+                  );
               if (autoCheckoutBranchAfterIssueCreation === "ask") {
-                window.showInformationMessage("Do you want to create a branch for this issue?", "Yes", "No").then((value) => {
-                  if (value === "Yes") {
-                    getInputAndCreateBranch(`${issue.identifier}: ${issue.title}`);
-                  }
-                });
+                return window
+                  .showInformationMessage(
+                    "Do you want to create a branch for this issue?",
+                    "Yes",
+                    "No"
+                  )
+                  .then((value) => {
+                    if (value === "Yes") {
+                      return createBranch(issue.branchName);
+                    }
+                  });
               } else if (autoCheckoutBranchAfterIssueCreation === "yes") {
-                getInputAndCreateBranch(`${issue.identifier}: ${issue.title}`);
+                return createBranch(issue.branchName);
               }
             });
         });
@@ -197,9 +268,9 @@ export function activate(context: ExtensionContext) {
           env.openExternal(
             Uri.parse(
               urlPrefix +
-              request?.issueVcsBranchSearch.team.organization.urlKey +
-              "/issue/" +
-              request?.issueVcsBranchSearch.identifier
+                request?.issueVcsBranchSearch.team.organization.urlKey +
+                "/issue/" +
+                request?.issueVcsBranchSearch.identifier
             )
           );
         } else {
@@ -217,8 +288,9 @@ export function activate(context: ExtensionContext) {
 
   context.subscriptions.push(openLinearIssueCommandDisposable);
 
-  const updateLinearIssueStatusCommandDisposable =
-    commands.registerCommand(`${NAMESPACE}.updateIssue`, async () => {
+  const updateLinearIssueStatusCommandDisposable = commands.registerCommand(
+    `${NAMESPACE}.updateIssue`,
+    async () => {
       const linearClient = await getLinearClient();
 
       // Use VS Code's built-in Git extension API to get the current branch name.
@@ -250,9 +322,7 @@ export function activate(context: ExtensionContext) {
 
         const issueId = request?.issueVcsBranchSearch?.identifier;
         if (!issueId) {
-          window.showErrorMessage(
-            `No issue found for the current branch`
-          );
+          window.showErrorMessage(`No issue found for the current branch`);
           return;
         }
         const issue = await linearClient.issue(issueId);
@@ -305,9 +375,7 @@ export function activate(context: ExtensionContext) {
           });
           try {
             if (!userInput) {
-              window.showInformationMessage(
-                "No input provided, cancelling"
-              );
+              window.showInformationMessage("No input provided, cancelling");
               return;
             }
             callback(userInput);
@@ -323,7 +391,8 @@ export function activate(context: ExtensionContext) {
           `An error occurred while trying to fetch Linear issue information. Error: ${error}`
         );
       }
-    });
+    }
+  );
 
   context.subscriptions.push(updateLinearIssueStatusCommandDisposable);
 }
@@ -348,88 +417,39 @@ async function getLinearClient() {
   return linearClient;
 }
 
-async function fetchUserId(linearClient: LinearClient) {
-  return (
-    (await linearClient.client.request(`query {
-          viewer {
-            id
-          }
-        }`)) as {
-      viewer: {
-        id: string;
-      } | null;
-    } | null
-  )?.viewer?.id;
-}
-
-async function fetchUserAssignedIssues(
-  linearClient: LinearClient,
-  userId: string
-) {
-  return (
-    (await linearClient.client.request(`query {
-          user(id: "${userId}") {
-            id
-            name
-            assignedIssues (filter: {cycle : {startsAt: {gt: "${SPRINT_TIME_QUERY}"} }}) {
-              nodes {
-                title
-                identifier
-                cycle {
-                  startsAt
-                }
-              }
-            }
-          }
-        }`)) as {
-      user: {
-        assignedIssues: {
-          nodes: {
-            identifier: string;
-            title: string;
-            cycle: {
-              number: number;
-            };
-          }[];
-        };
-        id: string;
-        name: string;
-      } | null;
-    } | null
-  )?.user?.assignedIssues.nodes;
+async function fetchUserIssues(linearClient: LinearClient) {
+  const NotCanceled = { type: { neq: "canceled" } };
+  return await linearClient.issues({
+    filter: {
+      cycle: {
+        or: [{ isNext: True }, { isPrevious: True }, { isActive: True }],
+      },
+      state: NotCanceled,
+      or: [
+        {
+          assignee: isMe,
+        },
+        {
+          creator: isMe,
+        },
+        {
+          subscribers: isMe,
+        },
+      ],
+    },
+  });
+  // linearClient.issueVcsBranchSearch
 }
 
 async function fetchIssuesWithSearch(
   linearClient: LinearClient,
   query: string
 ) {
-  const queryString = `query {
-      issues(filter: { title: { containsIgnoreCase: "${query}" }}) {
-            nodes {
-              title
-              identifier
-              cycle {
-                startsAt
-              }
-            }
-          }
-        }`;
-  return (
-    (await linearClient.client.request(queryString)) as {
-      issues: {
-        nodes: {
-          identifier: string;
-          title: string;
-          cycle: {
-            number: number;
-          };
-        }[];
-      };
-    }
-  ).issues.nodes;
+  const issueSearch = await linearClient.searchIssues(query);
+  return issueSearch;
 }
 
-export function deactivate() { }
+export function deactivate() {}
 
 const execShell = (cmd: string) =>
   new Promise<string>((resolve, reject) => {
@@ -440,30 +460,18 @@ const execShell = (cmd: string) =>
       return resolve(out);
     });
   });
-async function getInputAndCreateBranch(issueLabel: string) {
-  const includeIssueName = workspace
-    .getConfiguration()
-    .get<boolean>("linear-git-tools.includeIssueNameInBranch", true);
-  const maxCharactersFromIssueName = workspace.getConfiguration().get<number>("linear-git-tools.maxCharactersFromIssueName", 35);
 
-  const chosenIssue = issueLabel;
-  const issueLabelId = chosenIssue.split(":")[0];
-  const issueName = includeIssueName ? chosenIssue.slice(0, maxCharactersFromIssueName) : issueLabelId;
-
-  let branch = await window.showInputBox({
-    title: "enter branch name:",
-    value: `${issueName}`.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9 ]+/g, ""),
-  });
-
-  if (branch) {
-    branch = branch?.toLowerCase().trim().replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9 ]+/g, "");
-    window.showInformationMessage(`creating branch: ${branch}`);
+async function createBranch(branchName: string | undefined) {
+  if (branchName) {
+    window.showInformationMessage(`creating branch: ${branchName}`);
     let wf = workspace.workspaceFolders?.[0].uri.path;
     if (!wf) {
       window.showErrorMessage(`No workspace folder found`);
       return;
     }
-    const branchName = await execShell(`cd ${wf}; git checkout -b ${branch}`);
-    window.showInformationMessage(`done!`, branchName);
+    const result = await execShell(
+      `cd ${wf}; git switch ${branchName} 2>/dev/null || git checkout -B ${branchName}`
+    );
+    window.showInformationMessage(`done!`, result);
   }
 }
