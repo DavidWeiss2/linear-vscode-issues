@@ -6,7 +6,12 @@ Once installed, just go to the command menu with:
 
 `Cmd + Shift + P`
 
-And type "Linear Git Tools". You'll see commands like "Linear Git Tools: Create GIT branch", "Linear Git Tools: Create Linear issue", and "Linear Git Tools: Open Linear issue" appear.
+And type "Linear Git Tools". You'll see commands like:
+
+- "Linear Git Tools: Create GIT branch"
+- "Linear Git Tools: Create Linear issue"
+- "Linear Git Tools: Open Linear issue"
+- "Linear Git Tools: Update Linear issue field"
 
 This extension uses our VS Code Linear API authentication provider that is exposed by the [linear-connect](https://marketplace.visualstudio.com/items?itemName=Linear.linear-connect) extension. Feel free to use that in your own extensions!
 
@@ -24,8 +29,6 @@ This extension uses our VS Code Linear API authentication provider that is expos
 You can configure the extension with the following settings:
 
 - `linear-git-tools.openInDesktopApp`: Open the issue in the Linear desktop app instead of the browser. (default: `false`)
-- `linear-git-tools.includeIssueNameInBranch`: Include the issue name in the new branch name. (default: `true`)
-- `linear-git-tools.maxCharactersFromIssueName`: Maximum number of characters to include from the issue name in the new branch name. (default: `35`)
 - `linear-git-tools.autoCheckoutBranchAfterIssueCreation`: Automatically checkout the new branch after creation of the issue. Options: `ask`, `yes`, `no`. (default: `ask`)
 
 ## Developing & Contributing

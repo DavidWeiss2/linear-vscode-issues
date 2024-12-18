@@ -5,7 +5,7 @@
   "publisher": "DavidWeiss2",
   "author": "GP",
   "license": "MIT",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "icon": "assets/128x128.png",
   "repository": {
     "type": "git",
@@ -56,16 +56,6 @@
           "type": "boolean",
           "default": false,
           "description": "Open the issue in the Linear desktop app instead of the browser."
-        },
-        "linear-git-tools.includeIssueNameInBranch": {
-          "type": "boolean",
-          "default": true,
-          "description": "Include the issue name in the new branch name."
-        },
-        "linear-git-tools.maxCharactersFromIssueName": {
-          "type": "number",
-          "default": 35,
-          "description": "Maximum number of characters to include from the issue name in the new branch name."
         },
         "linear-git-tools.autoCheckoutBranchAfterIssueCreation": {
           "type": "string",
