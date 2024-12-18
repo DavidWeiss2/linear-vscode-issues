@@ -88,6 +88,8 @@ export function activate(context: ExtensionContext) {
         const issues: Issue[] = issueConnection.nodes ?? []; // todo: handle pagination
         const issueItems = await Promise.all(issues.map(toIssueItem));
 
+        const alreadyShownIssues = new Set(issues.map((i) => i.identifier));
+
         const items = [
           ...actionsItems,
           separatorItem,
@@ -98,6 +100,7 @@ export function activate(context: ExtensionContext) {
 
         quickPick.onDidAccept(async (selected) => {
           const item = quickPick.activeItems[0];
+          quickPick.hide();
           if (!item.issue) {
             const action = actions.find((a) => a.tooltip === item.label);
             if (action) {
@@ -123,7 +126,14 @@ export function activate(context: ExtensionContext) {
               ).then((res) => res.nodes);
 
               quickPick.items = items.concat(
-                await Promise.all(searchIssues.map(toIssueItem))
+                await Promise.all(
+                  searchIssues
+                    .filter(
+                      // remove duplicates
+                      (i) => alreadyShownIssues.has(i.identifier) === false
+                    )
+                    .map(toIssueItem)
+                )
               );
               quickPick.busy = false;
             }
@@ -277,9 +287,8 @@ export function activate(context: ExtensionContext) {
     async () => {
       const linearClient = await getLinearClient();
 
-
       try {
-        const issue =await getCurrentBranchIssue(linearClient);
+        const issue = await getCurrentBranchIssue(linearClient);
         const updatableFieldsNames = [
           "priority",
           "title",
@@ -379,12 +388,17 @@ async function fetchUserIssues(linearClient: LinearClient) {
   return await linearClient.issues({
     filter: {
       cycle: {
-        or: [{ isNext: True }, { isPrevious: True }, { isActive: True },{ null: true }],
+        or: [
+          { isNext: True },
+          { isPrevious: True },
+          { isActive: True },
+          { null: true },
+        ],
       },
       state: stateIsNot("canceled", "completed"),
       or: [
         {
-          assignee: {or:[isMe, { null:true }] },
+          assignee: { or: [isMe, { null: true }] },
         },
         {
           creator: isMe,
@@ -411,7 +425,8 @@ async function fetchIssuesWithSearch(
 }
 
 async function getCurrentBranchIssue(linearClient: LinearClient) {
-  const gitExtension = extensions.getExtension<GitExtension>("git")?.exports;
+  const gitExtension =
+    extensions.getExtension<GitExtension>("vscode.git")?.exports;
   const git = gitExtension?.getAPI(1);
   const branchName = git?.repositories[0]?.state.HEAD?.name;
 
@@ -420,7 +435,7 @@ async function getCurrentBranchIssue(linearClient: LinearClient) {
   }
 
   const issue = await linearClient.issueVcsBranchSearch(branchName);
-  if(!issue){
+  if (!issue) {
     throw new Error("No issue found for the current branch");
   }
   return issue;
@@ -433,7 +448,7 @@ async function toIssueItem(issue: Issue): Promise<QuickPickItem> {
 
   return {
     label: `${state}${issue.identifier} - ${issue.title}`,
-    detail:branchName,
+    detail: branchName,
     issue,
   };
 }
