@@ -1,4 +1,4 @@
-import { LinearClient } from "@linear/sdk";
+import { LinearClient, LinearDocument} from "@linear/sdk";
 import { exec } from "child_process";
 import {
   authentication,
@@ -17,12 +17,20 @@ import { GitExtension } from "./types.d/git";
 
 type Issue = Pick<
   Awaited<ReturnType<LinearClient["issue"]>>,
-  "identifier" | "title" | "branchName"
+  "identifier" | "title" | "branchName" | "state"
 >;
 
 interface QuickPickItem extends VSCodeQuickPickItem {
   issue?: Issue;
 }
+
+type IssueState =
+  | "triage"
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "canceled";
 
 const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
 const LINEAR_AUTHENTICATION_SCOPES = ["read", "issues:create"];
@@ -40,13 +48,16 @@ export function activate(context: ExtensionContext) {
       try {
         const linearClient = await getLinearClient();
 
-        const issueConnection = (await fetchUserIssues(linearClient)) ?? [];
-        const issues: Pick<
-          (typeof issueConnection.nodes)[number],
-          "identifier" | "title" | "branchName"
-        >[] = issueConnection.nodes ?? []; // todo: handle pagination
-
         const quickPick = window.createQuickPick<QuickPickItem>();
+
+        quickPick.title = "Select an issue to create a branch for";
+        quickPick.placeholder = "Search for an issue to create a branch for";
+        quickPick.items = [
+          { label: "Loading...", alwaysShow: true } as QuickPickItem,
+        ];
+        quickPick.busy = true;
+        quickPick.show();
+
         const actions: {
           tooltip: string;
           action: () => void;
@@ -58,25 +69,6 @@ export function activate(context: ExtensionContext) {
             iconId: "add",
           },
         ];
-
-        // quickPick.buttons = actions.map(({iconId,tooltip,action})=>({iconPath:new ThemeIcon(iconId),tooltip,action}));
-        quickPick.title = "Select an issue to create a branch for";
-
-        const issueItems = issues.map(toIssueItem);
-
-        function toIssueItem(issue: Issue): QuickPickItem {
-          return {
-            label: `${issue.identifier}: ${issue.title}`,
-            detail: issue.branchName ? `Branch: ${issue.branchName}` : "",
-            issue,
-          };
-        }
-
-        const separatorItem = {
-          label: "actions",
-          kind: QuickPickItemKind.Separator,
-        } satisfies QuickPickItem;
-
         const actionsItems = actions.map(
           ({ iconId, tooltip }) =>
             ({
@@ -86,6 +78,15 @@ export function activate(context: ExtensionContext) {
               alwaysShow: true,
             } satisfies QuickPickItem)
         );
+
+        const separatorItem = {
+          label: "actions",
+          kind: QuickPickItemKind.Separator,
+        } satisfies QuickPickItem;
+
+        const issueConnection = (await fetchUserIssues(linearClient)) ?? [];
+        const issues: Issue[] = issueConnection.nodes ?? []; // todo: handle pagination
+        const issueItems = await Promise.all(issues.map(toIssueItem));
 
         const items = [
           ...actionsItems,
@@ -104,8 +105,7 @@ export function activate(context: ExtensionContext) {
             }
             return;
           }
-          quickPick.dispose();
-          // return createBranch(issueRes.branchName);
+          return createBranch(item.issue.branchName);
         });
 
         let timeout: NodeJS.Timeout;
@@ -116,16 +116,20 @@ export function activate(context: ExtensionContext) {
               value &&
               quickPick.activeItems.length < MINIMUM_ITEMS_ACTIVE_BEFORE_SEARCH
             ) {
+              quickPick.busy = true;
               const searchIssues = await fetchIssuesWithSearch(
                 linearClient,
                 value
               ).then((res) => res.nodes);
 
-              quickPick.items = items.concat(searchIssues.map(toIssueItem));
+              quickPick.items = items.concat(
+                await Promise.all(searchIssues.map(toIssueItem))
+              );
+              quickPick.busy = false;
             }
           }, 500);
         });
-
+        quickPick.busy = false;
         quickPick.show();
       } catch (error) {
         window.showErrorMessage(
@@ -417,14 +421,17 @@ async function getLinearClient() {
   return linearClient;
 }
 
+function stateIsNot(...state: IssueState[]) {
+  return { type: { nin: state } };
+}
+
 async function fetchUserIssues(linearClient: LinearClient) {
-  const NotCanceled = { type: { neq: "canceled" } };
   return await linearClient.issues({
     filter: {
       cycle: {
         or: [{ isNext: True }, { isPrevious: True }, { isActive: True }],
       },
-      state: NotCanceled,
+      state: stateIsNot("canceled", "completed"),
       or: [
         {
           assignee: isMe,
@@ -437,16 +444,43 @@ async function fetchUserIssues(linearClient: LinearClient) {
         },
       ],
     },
+    orderBy: LinearDocument.PaginationOrderBy.UpdatedAt,
   });
-  // linearClient.issueVcsBranchSearch
 }
 
 async function fetchIssuesWithSearch(
   linearClient: LinearClient,
   query: string
 ) {
-  const issueSearch = await linearClient.searchIssues(query);
+  const issueSearch = await linearClient.searchIssues(query, {
+    includeArchived: false,
+    orderBy: LinearDocument.PaginationOrderBy.UpdatedAt,
+    includeComments: true,
+  });
   return issueSearch;
+}
+
+async function fetchIssueFromBranchName(
+  linearClient: LinearClient,
+  branchName: string
+) {
+  const issue = await linearClient.issueVcsBranchSearch(branchName);
+  return issue;
+}
+
+async function toIssueItem(issue: Issue): Promise<QuickPickItem> {
+  const awaitedState = await issue.state;
+  const state = awaitedState
+    ? ` (${awaitedState.name}) `
+    : "";
+  const branchName = issue.branchName ? `Branch: ${issue.branchName}` : "";
+
+  return {
+    label: `${state}${issue.identifier}`,
+    detail: branchName,description
+    : issue.title,
+    issue,
+  };
 }
 
 export function deactivate() {}
