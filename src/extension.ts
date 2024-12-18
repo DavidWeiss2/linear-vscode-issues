@@ -1,4 +1,4 @@
-import { LinearClient, LinearDocument} from "@linear/sdk";
+import { LinearClient, LinearDocument } from "@linear/sdk";
 import { exec } from "child_process";
 import {
   authentication,
@@ -46,8 +46,6 @@ export function activate(context: ExtensionContext) {
     `${NAMESPACE}.createBranch`,
     async () => {
       try {
-        const linearClient = await getLinearClient();
-
         const quickPick = window.createQuickPick<QuickPickItem>();
 
         quickPick.title = "Select an issue to create a branch for";
@@ -83,6 +81,8 @@ export function activate(context: ExtensionContext) {
           label: "actions",
           kind: QuickPickItemKind.Separator,
         } satisfies QuickPickItem;
+
+        const linearClient = await getLinearClient();
 
         const issueConnection = (await fetchUserIssues(linearClient)) ?? [];
         const issues: Issue[] = issueConnection.nodes ?? []; // todo: handle pagination
@@ -145,23 +145,35 @@ export function activate(context: ExtensionContext) {
     `${NAMESPACE}.createIssue`,
     async () => {
       try {
+        const quickPick = window.createQuickPick<
+          QuickPickItem & { value?: string }
+        >();
+        quickPick.title = "Select a team to create an issue for";
+        quickPick.placeholder = "Select a team";
+        quickPick.items = [
+          { label: "Loading...", alwaysShow: true } as QuickPickItem,
+        ];
+        quickPick.busy = true;
+        quickPick.show();
+
         const linearClient = await getLinearClient();
 
         const me = await linearClient.viewer;
 
         const teams = await me.teams();
 
-        const quickPick = window.createQuickPick<{
-          label: string;
-          detail: string;
-          value: string;
-        }>();
         quickPick.items = teams.nodes.map((team) => ({
           label: team.name,
           detail: team.key,
           value: team.id,
         }));
+
         quickPick.onDidAccept(async () => {
+          const teamId = quickPick.activeItems[0].value;
+          if (!teamId) {
+            window.showErrorMessage(`No team found`);
+            return;
+          }
           const title = await window.showInputBox({
             placeHolder: "Issue title",
             prompt: "",
@@ -171,9 +183,10 @@ export function activate(context: ExtensionContext) {
             window.showErrorMessage(`No title found`);
             return;
           }
+          quickPick.busy = true;
           const issue = await linearClient
             .createIssue({
-              teamId: quickPick.activeItems[0].value,
+              teamId,
               title,
             })
             .then((issue) => (issue.success ? issue.issue : undefined))
@@ -184,6 +197,7 @@ export function activate(context: ExtensionContext) {
             window.showErrorMessage(`Issue not created`);
             return;
           }
+          quickPick.busy = false;
           window
             .showInformationMessage(
               `Issue created successfully ${issue.identifier}`,
@@ -218,6 +232,7 @@ export function activate(context: ExtensionContext) {
             });
         });
 
+        quickPick.busy = false;
         quickPick.show();
       } catch (error) {
         window.showErrorMessage(
@@ -233,55 +248,20 @@ export function activate(context: ExtensionContext) {
     async () => {
       const linearClient = await getLinearClient();
 
-      // Use VS Code's built-in Git extension API to get the current branch name.
-      const gitExtension =
-        extensions.getExtension<GitExtension>("git")?.exports;
-      const git = gitExtension?.getAPI(1);
-      const branchName = git?.repositories[0]?.state.HEAD?.name;
-
       try {
-        const request: {
-          issueVcsBranchSearch: {
-            identifier: string;
-            team: {
-              organization: {
-                urlKey: string;
-              };
-            };
-          } | null;
-        } | null = await linearClient.client.request(`query {
-            issueVcsBranchSearch(branchName: "${branchName}") {
-              identifier
-              team {
-                organization {
-                  urlKey
-                }
-              }
-            }
-          }`);
+        const issue = await getCurrentBranchIssue(linearClient);
 
-        if (request?.issueVcsBranchSearch?.identifier) {
-          // Preference to open the issue in the desktop app or in the browser.
-          const urlPrefix = workspace
-            .getConfiguration()
-            .get<boolean>("linear-git-tools.openInDesktopApp")
-            ? "linear://"
-            : "https://linear.app/";
+        // Preference to open the issue in the desktop app or in the browser.
+        const openInDesktop = workspace
+          .getConfiguration()
+          .get<boolean>("linear-git-tools.openInDesktopApp");
 
-          // Open the URL.
-          env.openExternal(
-            Uri.parse(
-              urlPrefix +
-                request?.issueVcsBranchSearch.team.organization.urlKey +
-                "/issue/" +
-                request?.issueVcsBranchSearch.identifier
-            )
-          );
-        } else {
-          window.showInformationMessage(
-            `No Linear issue could be found matching the branch name ${branchName} in the authenticated workspace.`
-          );
-        }
+        const url = openInDesktop
+          ? issue.url.replace("https://linear.app/", "linear://")
+          : issue.url;
+
+        // Open the URL.
+        env.openExternal(Uri.parse(url));
       } catch (error) {
         window.showErrorMessage(
           `An error occurred while trying to fetch Linear issue information. Error: ${error}`
@@ -297,39 +277,9 @@ export function activate(context: ExtensionContext) {
     async () => {
       const linearClient = await getLinearClient();
 
-      // Use VS Code's built-in Git extension API to get the current branch name.
-      const gitExtension =
-        extensions.getExtension<GitExtension>("git")?.exports;
-      const git = gitExtension?.getAPI(1);
-      const branchName = git?.repositories[0]?.state.HEAD?.name;
 
       try {
-        const request: {
-          issueVcsBranchSearch: {
-            identifier: string;
-            team: {
-              organization: {
-                urlKey: string;
-              };
-            };
-          } | null;
-        } | null = await linearClient.client.request(`query {
-            issueVcsBranchSearch(branchName: "${branchName}") {
-              identifier
-              team {
-                organization {
-                  urlKey
-                }
-              }
-            }
-          }`);
-
-        const issueId = request?.issueVcsBranchSearch?.identifier;
-        if (!issueId) {
-          window.showErrorMessage(`No issue found for the current branch`);
-          return;
-        }
-        const issue = await linearClient.issue(issueId);
+        const issue =await getCurrentBranchIssue(linearClient);
         const updatableFieldsNames = [
           "priority",
           "title",
@@ -468,17 +418,31 @@ async function fetchIssueFromBranchName(
   return issue;
 }
 
+async function getCurrentBranchIssue(linearClient: LinearClient) {
+  const gitExtension = extensions.getExtension<GitExtension>("git")?.exports;
+  const git = gitExtension?.getAPI(1);
+  const branchName = git?.repositories[0]?.state.HEAD?.name;
+
+  if (!branchName) {
+    throw new Error("No branch found");
+  }
+
+  const issue = await linearClient.issueVcsBranchSearch(branchName);
+  if(!issue){
+    throw new Error("No issue found for the current branch");
+  }
+  return issue;
+}
+
 async function toIssueItem(issue: Issue): Promise<QuickPickItem> {
   const awaitedState = await issue.state;
-  const state = awaitedState
-    ? ` (${awaitedState.name}) `
-    : "";
+  const state = awaitedState ? ` (${awaitedState.name}) ` : "";
   const branchName = issue.branchName ? `Branch: ${issue.branchName}` : "";
 
   return {
     label: `${state}${issue.identifier}`,
-    detail: branchName,description
-    : issue.title,
+    detail: branchName,
+    description: issue.title,
     issue,
   };
 }
