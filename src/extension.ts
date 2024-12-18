@@ -379,12 +379,12 @@ async function fetchUserIssues(linearClient: LinearClient) {
   return await linearClient.issues({
     filter: {
       cycle: {
-        or: [{ isNext: True }, { isPrevious: True }, { isActive: True }],
+        or: [{ isNext: True }, { isPrevious: True }, { isActive: True },{ null: true }],
       },
       state: stateIsNot("canceled", "completed"),
       or: [
         {
-          assignee: isMe,
+          assignee: {or:[isMe, { null:true }] },
         },
         {
           creator: isMe,
@@ -410,14 +410,6 @@ async function fetchIssuesWithSearch(
   return issueSearch;
 }
 
-async function fetchIssueFromBranchName(
-  linearClient: LinearClient,
-  branchName: string
-) {
-  const issue = await linearClient.issueVcsBranchSearch(branchName);
-  return issue;
-}
-
 async function getCurrentBranchIssue(linearClient: LinearClient) {
   const gitExtension = extensions.getExtension<GitExtension>("git")?.exports;
   const git = gitExtension?.getAPI(1);
@@ -440,9 +432,8 @@ async function toIssueItem(issue: Issue): Promise<QuickPickItem> {
   const branchName = issue.branchName ? `Branch: ${issue.branchName}` : "";
 
   return {
-    label: `${state}${issue.identifier}`,
-    detail: branchName,
-    description: issue.title,
+    label: `${state}${issue.identifier} - ${issue.title}`,
+    detail:branchName,
     issue,
   };
 }
